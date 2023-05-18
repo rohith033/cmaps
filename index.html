@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta charset="UTF-8">
+   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>Document</title>
+   <style>
+      #map { height: 100vh; }
+      .search-container {
+         position: absolute;
+         top: 10px;
+         right: 10px;
+         z-index: 1000;
+      }
+   </style>
+</head>
+<body>
+
+    
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.2/dist/leaflet.css"
+integrity="sha256-sA+zWATbFveLLNqWO2gtiw3HL/lh1giY/Inf1BJ0z14="
+crossorigin=""/>
+<!-- Make sure you put this AFTER Leaflet's CSS -->
+<script src="https://unpkg.com/leaflet@1.9.2/dist/leaflet.js"
+integrity="sha256-o9N1jGDZrf5tS+Ft4gbIK7mYMipq9lqpVJ91xHSyKhg="
+crossorigin=""></script>
+
+<script src="https://api.tomtom.com/maps-sdk-for-web/cdn/6.x/6.14.0/maps/maps-web.min.js?key=rwHZUlAod2Vk0xqz4J5CRB5sY2H01d7V"></script>
+
+
+   <div id="map"></div>
+   <div class="search-container">
+      <input type="text" id="search-input" placeholder="Search location">
+      <input type="time" id="time-input">
+      <select id="mode-list"></select>
+      <button id="search-button">Search</button>
+   </div>
+
+   <script>
+      // Get user's current location
+      navigator.geolocation.getCurrentPosition(success, error);
+
+      function success(position) {
+         const userLat = position.coords.latitude;
+         const userLng = position.coords.longitude;
+         initMap(userLat, userLng);
+      }
+
+      function error() {
+         // Handle error when geolocation is not available or denied
+         // Default to a fallback location
+         const fallbackLat = 0;
+         const fallbackLng = 0;
+         initMap(fallbackLat, fallbackLng);
+      }
+
+      function initMap(lat, lng) {
+         const map = L.map('map');
+         map.setView([lat, lng], 15);
+         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 50,
+            attribution: '© <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+         }).addTo(map);
+
+         const marker = L.marker([lat, lng]).addTo(map);
+         const circle = L.circle([lat, lng], { radius: 0 }).addTo(map);
+
+         const modes = [
+            { label: 'Driving', value: 'drive' },
+            { label: 'Walking', value: 'walk' },
+            { label: 'Bicycling', value: 'bicycle' },
+            { label: 'Transit', value: 'approximated_transit' },
+            { label: 'Truck', value: 'truck' },
+            { label: 'Heavy Truck', value: 'heavy_truck' },
+            { label: 'Bus', value: 'bus' },
+            { label: 'Motorcycle', value: 'motorcycle' },
+         ];
+
+         const modeList = document.getElementById('mode-list');
+
+         modes.forEach(mode => {
+            const option = document.createElement('option');
+            option.value = mode.value;
+            option.textContent = mode.label;
+            modeList.appendChild(option);
+         });
+
+         document.getElementById('search-button').addEventListener('click', function () {
+            const searchTerm = document.getElementById('search-input').value;
+            const timeInput = document.getElementById('time-input').value;
+            const mode = modeList.value;
+
+            if (searchTerm !== '') {
+               fetchLocation(searchTerm, timeInput, mode);
+            }
+         });
+
+         map.on('dblclick', function (event) {
+            const lat = event.latlng.lat;
+            const lng = event.latlng.lng;
+
+            marker.setLatLng([lat, lng]);
+            circle.setLatLng([lat, lng]);
+
+            const timeInput = prompt('Enter the time (HH:MM) for the commute:');
+            const mode = modeList.value;
+
+            if (timeInput !== null && timeInput !== '') {
+               const timeInSeconds = convertTimeToSeconds(timeInput);
+               const style = 'absolute';
+    const zoom = 15;
+    const format = 'json';
+    const latitude = lat;
+    const longitude = lng;
+    let eff_time = timeInSeconds;
+    getFlowSegmentData(style, zoom, format, latitude, longitude,eff_time)
+      .then(flowData => {
+        const currentSpeed = flowData.currentSpeed || 'N/A';
+        const freeFlowSpeed = flowData.freeFlowSpeed || 'N/A';
+        const confidence = flowData.confidence || 'N/A';
+        eff_time = eff_time*((currentSpeed /freeFlowSpeed)*confidence)
+        console.log(eff_time)
+        calculateReachableArea(lat, lng,eff_time,mode);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+      
+      
+
+            }
+         }
+         );
+
+         function fetchLocation(searchTerm, time, mode) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchTerm)}&format=json`;
+
+  fetch(url)
+    .then(response => response.json())
+    .then(data => {
+      if (data.length > 0) {
+        const result = data[0];
+        const lat = parseFloat(result.lat);
+        const lon = parseFloat(result.lon);
+
+        // Update the marker and circle positions
+        marker.setLatLng([lat, lon]);
+        circle.setLatLng([lat, lon]);
+
+        map.setView([lat, lon], 15);
+
+        const timeInSeconds = convertTimeToSeconds(time);
+        const style = 'absolute';
+    const zoom = 15;
+    const format = 'json';
+    const latitude = lat;
+    const longitude = lon;
+    let eff_time = timeInSeconds;
+    getFlowSegmentData(style, zoom, format, latitude, longitude,eff_time)
+      .then(flowData => {
+        const currentSpeed = flowData.currentSpeed || 'N/A';
+        const freeFlowSpeed = flowData.freeFlowSpeed || 'N/A';
+        const confidence = flowData.confidence || 'N/A';
+        console.log(currentSpeed)
+        console.log(freeFlowSpeed)
+        eff_time = eff_time*((currentSpeed /freeFlowSpeed)*confidence)
+        console.log(eff_time)
+        calculateReachableArea(latitude, longitude,eff_time, mode);
+      })
+      .catch(error => {
+        console.error(error);
+      });
+      } else {
+        alert('Location not found');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('An error occurred while fetching the location');
+    });
+}
+
+
+         function convertTimeToSeconds(time) {
+            const [hours, minutes] = time.split(':');
+            const timeInSeconds = parseInt(hours) * 3600 + parseInt(minutes) * 60;
+            return timeInSeconds;
+         }
+
+         function calculateReachableArea(lat, lng, range, mode) {
+            const apiKey = 'ab2c9dcd6aef4d91a8d449a67274cdd4';
+
+            const url = `https://api.geoapify.com/v1/isoline?lat=${lat}&lon=${lng}&type=time&mode=${mode}&range=${range}&apiKey=${apiKey}`;
+
+            fetch(url)
+               .then(response => {
+                  if (!response.ok) {
+                     throw new Error(`API request failed with status ${response.status}`);
+                  }
+                  return response.json();
+               })
+               .then(data => {
+
+                    console.log(data);
+                  if (!data.features || data.features.length === 0) {
+                     throw new Error('No features found in the API response');
+                  }
+                  const isolineLayer = L.geoJSON(data, {
+                     style: function (feature) {
+                        // Customize the layer style here
+                        return { color: generateRandomColor() };
+                     }
+                  }).addTo(map);
+                  console.log(isolineLayer.getBounds());
+                  map.fitBounds(isolineLayer.getBounds());
+               })
+               .catch(error => {
+                  console.error('Error:', error);
+                  alert('An error occurred while calculating the reachable area');
+               });
+         }
+
+         function generateRandomColor() {
+            let maxVal = 0xFFFFFF; // 16777215
+            let randomNumber = Math.random() * maxVal;
+            randomNumber = Math.floor(randomNumber);
+            randomNumber = randomNumber.toString(16);
+            let randColor = randomNumber.padStart(6, 0);
+            return `#${randColor.toUpperCase()}`
+         }
+      }
+      function getFlowSegmentData(style, zoom, format, latitude, longitude,time) {
+        const API_KEY = 'rwHZUlAod2Vk0xqz4J5CRB5sY2H01d7V';
+      const url = `https://api.tomtom.com/traffic/services/4/flowSegmentData/${style}/${zoom}/${format}`;
+      const params = new URLSearchParams({
+        point: `${latitude},${longitude}`,
+        unit: 'KMPH',
+        key: API_KEY
+      });
+
+      return fetch(url + "?" + params)
+        .then(response => response.json())
+        .then(data => {
+          if ('flowSegmentData' in data) {
+            const flowData = data.flowSegmentData;
+            return flowData;
+          } else {
+            throw new Error('Unable to retrieve flow segment data.');
+          }
+        })
+        .catch(error => {
+          console.error(error);
+          throw new Error('An error occurred while fetching flow segment data.');
+        });
+    }
+
+    
+   </script>
+</body>
+</html>
